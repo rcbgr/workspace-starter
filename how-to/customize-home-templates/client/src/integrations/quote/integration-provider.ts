@@ -1,11 +1,14 @@
 import {
 	CLITemplate,
+	Page,
+	PageLayout,
 	type CLIFilter,
 	type HomeDispatchedSearchResult,
 	type HomeSearchListenerResponse,
 	type HomeSearchResponse,
 	type HomeSearchResult
 } from "@openfin/workspace";
+import { BrowserCreateWindowRequest, BrowserWindowModule, getCurrentSync, WorkspacePlatformModule } from "@openfin/workspace-platform";
 import {
 	CategoryScale,
 	Chart,
@@ -19,6 +22,7 @@ import {
 import { DateTime } from "luxon";
 import type { IntegrationHelpers, IntegrationModule, ModuleDefinition } from "../../integrations-shapes";
 import { createHelp } from "../../templates";
+import { createPageWithLayout, createViewIdentity } from "./layout-utils";
 import type { QuoteResult, QuoteSettings } from "./shapes";
 import { getQuoteTemplate } from "./templates";
 
@@ -49,7 +53,21 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 	 * @internal
 	 */
 	private _settings: QuoteSettings | undefined;
+	public platform: WorkspacePlatformModule = getCurrentSync();
 
+	public async launchView(
+		view: OpenFin.PlatformViewCreationOptions | string,
+		targetIdentity?: OpenFin.Identity
+	) {
+		const platform = getCurrentSync();
+		let viewOptions: OpenFin.PlatformViewCreationOptions;
+		if (typeof view === "string") {
+			viewOptions = { url: view, target: null };
+		} else {
+			viewOptions = view;
+		}
+		return platform.createView(viewOptions, targetIdentity);
+	}
 	/**
 	 * Initialize the module.
 	 * @param definition The definition of the module from configuration include custom options.
@@ -64,8 +82,9 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 	): Promise<void> {
 		this._integrationHelpers = helpers;
 		this._settings = definition.data;
+		// this._integrationHelpers.launchView = helpers.launchView
 
-		Chart.register(LineController, CategoryScale, LinearScale, LineElement, PointElement, TimeScale, Filler);
+		// Chart.register(LineController, CategoryScale, LinearScale, LineElement, PointElement, TimeScale, Filler);
 	}
 
 	/**
@@ -115,10 +134,50 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 		if (
 			result.action.trigger === "user-action" &&
 			result.action.name === QuoteIntegrationProvider._QUOTE_PROVIDER_DETAILS_ACTION &&
-			result.data.url &&
-			this._integrationHelpers.openUrl
+			result.data.urls &&
+			this.launchView
 		) {
-			await this._integrationHelpers.openUrl(result.data.url as string);
+			const defaultPageLayout: PageLayout = {
+				content: [
+					{
+						type: "stack",
+						content: [
+							{
+								type: "component",
+								componentName: "view",
+								componentState: {
+									...createViewIdentity(fin.me.uuid, "v1"),
+									url: result.data.urls.trade
+								}
+							},
+							{
+								type: "component",
+								componentName: "view",
+								componentState: {
+									...createViewIdentity(fin.me.uuid, "v2"),
+									url: result.data.urls.activity
+								}
+							},
+							{
+								type: "component",
+								componentName: "view",
+								componentState: {
+									...createViewIdentity(fin.me.uuid, "v2"),
+									url: result.data.urls.pending
+								}
+							}
+						]
+					}
+				]
+			};
+			const page: Page = await createPageWithLayout("Coinbase Page", defaultPageLayout);
+			const pages: Page[] = [page];
+		
+			const options: BrowserCreateWindowRequest = {
+				workspacePlatform: { pages },
+				state: "maximized"
+			};
+			const createdBrowserWin: BrowserWindowModule = await this.platform.Browser.createWindow(options);
 			return true;
 		}
 
@@ -147,24 +206,24 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 
 				const now = DateTime.now();
 
-				const quoteData = await this.getQuoteData(
-					symbol,
-					now.minus({ months: 1 }).toFormat("yyyy-LL-dd"),
-					now.toFormat("yyyy-LL-dd")
-				);
+				// const quoteData = await this.getQuoteData(
+				// 	symbol,
+				// 	now.minus({ months: 1 }).toFormat("yyyy-LL-dd"),
+				// 	now.toFormat("yyyy-LL-dd")
+				// );
 
-				let price;
-				let company;
-				let data: { x: number; y: number }[];
+				// let price;
+				// let company;
+				// let data: { x: number; y: number }[];
 
-				if (quoteData?.data?.lastSalePrice) {
-					price = quoteData.data.lastSalePrice;
-					company = quoteData.data.company;
-					data = quoteData.data.chart;
-				}
+				// if (quoteData?.data?.lastSalePrice) {
+				// 	price = quoteData.data.lastSalePrice;
+				// 	company = quoteData.data.company;
+				// 	data = quoteData.data.chart;
+				// }
 
-				if (price !== undefined) {
-					const graphImage = await this.renderGraph(data);
+				// if (price !== undefined) {
+					// const graphImage = await this.renderGraph(data);
 
 					const quoteResult: HomeSearchResult = {
 						key: `quote-${symbol}`,
@@ -178,7 +237,11 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 						],
 						data: {
 							providerId: QuoteIntegrationProvider._PROVIDER_ID,
-							url: `https://www.nasdaq.com/market-activity/stocks/${symbol.toLowerCase()}`
+							urls: {
+								trade: `https://prime.coinbase.com/portfolio/82928bd1-e254-4509-9903-bcf2b239a9af/trade/${symbol.toUpperCase()}-USD`,
+								activity: `https://prime.coinbase.com/portfolio/d7a7abc5-3937-4ad0-af3d-9252a740a3c8/activity/activity?currencies=${symbol.toUpperCase()}`,
+								pending: `https://prime.coinbase.com/portfolio/d7a7abc5-3937-4ad0-af3d-9252a740a3c8/activity/pending?currencies=${symbol.toUpperCase()}`
+							}
 						},
 						template: CLITemplate.Custom,
 						templateContent: {
@@ -187,16 +250,14 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 							}),
 							data: {
 								symbol,
-								priceTitle: "Price",
-								price,
-								company,
-								graph: graphImage,
-								detailsTitle: "Details"
+								priceTitle: "Symbol",
+								// price,
+								// company,
 							}
 						}
 					};
 					results.push(quoteResult);
-				}
+				// }
 			}
 		}
 
@@ -212,59 +273,59 @@ export class QuoteIntegrationProvider implements IntegrationModule<QuoteSettings
 	 * @param to The date to.
 	 * @returns The result data.
 	 */
-	private async getQuoteData(symbol: string, from: string, to: string): Promise<QuoteResult | undefined> {
-		try {
-			const symbolUrl = `${this._settings?.rootUrl}${symbol}.json`;
-			const response = await fetch(symbolUrl);
+	// private async getQuoteData(symbol: string, from: string, to: string): Promise<QuoteResult | undefined> {
+	// 	try {
+	// 		const symbolUrl = `${this._settings?.rootUrl}${symbol}.json`;
+	// 		const response = await fetch(symbolUrl);
 
-			const json: QuoteResult = await response.json();
+	// 		const json: QuoteResult = await response.json();
 
-			return json;
-		} catch (err) {
-			console.error(err);
-		}
-	}
+	// 		return json;
+	// 	} catch (err) {
+	// 		console.error(err);
+	// 	}
+	// }
 
 	/**
 	 * Render the data as a graph.
 	 * @param data The data to render.
 	 * @returns The graph as a base64 encoded image.
 	 */
-	private async renderGraph(data: { x: number; y: number }[]): Promise<string> {
-		const canvas = document.createElement("canvas");
-		canvas.width = 250;
-		canvas.height = 110;
-		const ctx = canvas.getContext("2d");
+	// private async renderGraph(data: { x: number; y: number }[]): Promise<string> {
+	// 	const canvas = document.createElement("canvas");
+	// 	canvas.width = 250;
+	// 	canvas.height = 110;
+	// 	const ctx = canvas.getContext("2d");
 
-		const chart = new Chart(ctx, {
-			type: "line",
-			data: {
-				labels: data.map((d) => d.x),
-				datasets: [
-					{
-						fill: "origin",
-						backgroundColor: "green",
-						radius: 0,
-						data
-					} as never
-				]
-			},
-			options: {
-				animation: false,
-				responsive: false,
-				scales: {
-					x: {
-						display: false
-					}
-				},
-				plugins: {
-					legend: {
-						display: false
-					}
-				}
-			}
-		});
-		chart.update();
-		return chart.toBase64Image("image/jpeg", 1);
-	}
+	// 	const chart = new Chart(ctx, {
+	// 		type: "line",
+	// 		data: {
+	// 			labels: data.map((d) => d.x),
+	// 			datasets: [
+	// 				{
+	// 					fill: "origin",
+	// 					backgroundColor: "green",
+	// 					radius: 0,
+	// 					data
+	// 				} as never
+	// 			]
+	// 		},
+	// 		options: {
+	// 			animation: false,
+	// 			responsive: false,
+	// 			scales: {
+	// 				x: {
+	// 					display: false
+	// 				}
+	// 			},
+	// 			plugins: {
+	// 				legend: {
+	// 					display: false
+	// 				}
+	// 			}
+	// 		}
+	// 	});
+	// 	chart.update();
+	// 	return chart.toBase64Image("image/jpeg", 1);
+	// }
 }

@@ -1,9 +1,9 @@
 export interface QuoteResult {
 	data?: {
-		symbol: string;
-		company: string;
-		lastSalePrice: number;
-		chart: {
+		symbol?: string;
+		company?: string;
+		lastSalePrice?: number;
+		chart?: {
 			z: {
 				high: string;
 				low: string;

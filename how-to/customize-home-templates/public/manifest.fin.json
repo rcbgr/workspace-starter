@@ -61,7 +61,7 @@
 					"enabled": true,
 					"url": "http://localhost:8080/js/integrations/quote.bundle.js",
 					"data": {
-						"rootUrl": "http://localhost:8080/quotes/"
+						"rootUrl": "https://prime.coinbase.com/portfolio/82928bd1-e254-4509-9903-bcf2b239a9af/trade/"
 					}
 				},
 				{
